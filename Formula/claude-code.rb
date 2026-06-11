@@ -13,15 +13,6 @@ class ClaudeCode < Formula
   #   - Anthropic Acceptable Use Policy
   license :cannot_represent
 
-  # livecheck 块保留(满足 REQUIREMENTS.md FORM-08):
-  # 主要的 version 同步走 GitHub Actions webhook,但保留 livecheck 作为兜底,
-  # 以便用户在本地 `brew livecheck` 也能感知 upstream 新版本。
-  livecheck do
-    url :github_releases
-    strategy :github_releases
-    regex(/^v?(\d+\.\d+\.\d+)$/i)
-  end
-
   on_macos do
     on_arm do
       url "https://github.com/anthropics/claude-code/releases/download/v#{version}/claude-darwin-arm64.tar.gz"
