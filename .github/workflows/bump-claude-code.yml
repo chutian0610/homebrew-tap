@@ -83,7 +83,7 @@ jobs:
             %w[darwin-arm64 darwin-x64 linux-arm64 linux-x64].each do |p|
               filename = "claude-#{p}.tar.gz"
               content = File.read("Formula/claude-code.rb")
-              m = content.match(/claude-#{Regexp.escape(p)}\.tar\.gz"\s*\n\s*sha256\s+([a-f0-9]+)"/)
+              m = content.match(/claude-#{Regexp.escape(p)}\.tar\.gz"\s*\n\s*sha256\s+"([a-f0-9]+)"/)
               abort "未在 formula 中找到 #{p} 的 sha256" unless m
               formula_sha = m[1]
               upstream_sha = shas[filename]
