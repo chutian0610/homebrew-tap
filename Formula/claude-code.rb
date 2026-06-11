@@ -56,12 +56,15 @@ class ClaudeCode < Formula
       .map { |p| File.expand_path(p) }
       .include?(local_bin)
     # 根据 PATH 检测结果给出对应提示
+    # else 分支用 heredoc 包裹，避免双引号/$HOME/$PATH 被 Ruby 误解析
     path_hint = if in_path
       "`#{local_bin}` 已在当前 PATH 中，软链接可直接生效。"
     else
-      "`#{local_bin}` 不在当前 PATH 中，请将其加入 shell 配置，例如：
+      <<~MSG
+        `#{local_bin}` 不在当前 PATH 中，请将其加入 shell 配置，例如：
 
-        export PATH="$HOME/.local/bin:$PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+      MSG
     end
 
     <<~EOS
