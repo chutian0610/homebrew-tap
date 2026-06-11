@@ -16,9 +16,16 @@ permissions:
   pull-requests: write
 
 jobs:
-  bump:
-    name: Bump formula to upstream release
+  # 第一步：比对 formula 现有 version 与上游最新 release，
+  # 仅在不一致时通过 need_bump=true 放行 bump job
+  check:
+    name: Compare formula version with upstream
     runs-on: ubuntu-latest
+    outputs:
+      need_bump: ${{ steps.compare.outputs.need_bump }}
+      current_version: ${{ steps.current.outputs.version }}
+      latest_tag: ${{ steps.latest.outputs.tag }}
+      latest_version: ${{ steps.latest.outputs.tag_stripped }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -50,15 +57,32 @@ jobs:
           echo "tag_stripped=$stripped" >> "$GITHUB_OUTPUT"
           echo "upstream latest: $tag"
 
-      - name: Skip if formula already up to date
-        if: steps.current.outputs.version == steps.latest.outputs.tag_stripped
+      - name: Compare versions
+        id: compare
         run: |
-          echo "✅ 公式已是 v${{ steps.current.outputs.version }}，与上游最新 v${{ steps.latest.outputs.tag }} 一致，无需更新。"
-          exit 0
+          if [ "${{ steps.current.outputs.version }}" = "${{ steps.latest.outputs.tag_stripped }}" ]; then
+            echo "need_bump=false" >> "$GITHUB_OUTPUT"
+            echo "✅ 公式已是 v${{ steps.current.outputs.version }}，与上游最新 v${{ steps.latest.outputs.tag }} 一致，无需更新。"
+          else
+            echo "need_bump=true" >> "$GITHUB_OUTPUT"
+            echo "需从 v${{ steps.current.outputs.version }} 升级到 v${{ steps.latest.outputs.tag_stripped }}"
+          fi
+
+  # 第二步：实际下载 SHASUMS、跑 bump 脚本、commit、push、开 PR。
+  # 通过 needs + if 守护，version 一致时整 job 跳过（GitHub UI 显示 Skipped），
+  # 避免下游 git commit 报 "nothing to commit" 失败。
+  bump:
+    name: Bump formula to upstream release
+    needs: check
+    if: needs.check.outputs.need_bump == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Download upstream SHASUMS256.txt
         env:
-          TAG: ${{ steps.latest.outputs.tag }}
+          TAG: ${{ needs.check.outputs.latest_tag }}
         run: |
           curl -fsSL -o shasums.txt \
             "https://github.com/anthropics/claude-code/releases/download/${TAG}/SHASUMS256.txt"
@@ -68,7 +92,7 @@ jobs:
 
       - name: Update formula
         env:
-          VERSION: ${{ steps.latest.outputs.tag_stripped }}
+          VERSION: ${{ needs.check.outputs.latest_version }}
         run: ruby scripts/bump_formula.rb Formula/claude-code.rb "$VERSION" shasums.txt
 
       - name: Ruby syntax check
@@ -76,7 +100,7 @@ jobs:
 
       - name: "Cross-check: every platform sha matches SHASUMS256.txt"
         env:
-          VERSION: ${{ steps.latest.outputs.tag_stripped }}
+          VERSION: ${{ needs.check.outputs.latest_version }}
         run: |
           ruby -e '
             shas = File.foreach("shasums.txt").with_object({}) { |l, h| s, n = l.strip.split(/\s+/, 2); h[n] = s if n }
@@ -106,18 +130,11 @@ jobs:
       - name: Commit
         run: |
           git add Formula/claude-code.rb
-          git commit -m "chore(claude-code): bump to v${{ steps.latest.outputs.tag_stripped }}"
-          # 校验确实只有 Formula/claude-code.rb 被改动
-          git diff --cached --stat
-          # 若 commit 失败（无变更），直接退出
-          if ! git diff --cached --quiet; then
-            echo "::error::有未提交的变更"
-            exit 1
-          fi
+          git commit -m "chore(claude-code): bump to v${{ needs.check.outputs.latest_version }}"
 
       - name: Push branch
         env:
-          VERSION: ${{ steps.latest.outputs.tag_stripped }}
+          VERSION: ${{ needs.check.outputs.latest_version }}
         run: |
           BRANCH="bump/claude-code-v${VERSION}"
           # 删除可能存在的旧同名分支（来自历史失败或被关闭的 PR）
@@ -127,8 +144,8 @@ jobs:
       - name: Open pull request
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.latest.outputs.tag_stripped }}
-          TAG: ${{ steps.latest.outputs.tag }}
+          VERSION: ${{ needs.check.outputs.latest_version }}
+          TAG: ${{ needs.check.outputs.latest_tag }}
         run: |
           BRANCH="bump/claude-code-v${VERSION}"
           gh pr create \
