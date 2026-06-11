@@ -47,3 +47,30 @@ You can confirm which `claude` is on your `PATH` with `which claude`. The
 formula installs to Homebrew's `bin` directory (`/opt/homebrew/bin/claude` on
 Apple Silicon, `/usr/local/bin/claude` on Intel macOS, `/home/linuxbrew/.linuxbrew/bin/claude`
 on Linux).
+
+### Auto-updates
+
+A daily GitHub Actions workflow (`.github/workflows/bump-claude-code.yml`)
+watches [anthropics/claude-code releases](https://github.com/anthropics/claude-code/releases).
+
+When a new version is published upstream, the workflow:
+
+1. Fetches the latest release tag via the GitHub API.
+2. Downloads the upstream `SHASUMS256.txt` (signed by Anthropic) instead of
+   hashing tarballs itself.
+3. Runs `scripts/bump_formula.rb` to update `version` and the four
+   platform-specific `sha256` values in `Formula/claude-code.rb`.
+4. Re-verifies every sha256 in the formula against `SHASUMS256.txt` and runs
+   `ruby -c` for a syntax check.
+5. Opens a pull request against `main` for human review.
+
+The workflow can also be triggered manually from the Actions tab
+(`workflow_dispatch`) to force a re-check. Direct pushes to `main` never
+happen — every bump is reviewed via PR before the formula is updated for
+end users.
+
+If Anthropic ever changes the asset naming (e.g. renames
+`claude-darwin-arm64.tar.gz`) or adds a new platform, the bump script will
+fail loudly with a clear error message, and the PR will not be opened. In
+that case, update `PLATFORMS` in `scripts/bump_formula.rb` to match the new
+shape and rerun the workflow.

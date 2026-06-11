@@ -1,0 +1,156 @@
+name: Bump claude-code formula
+
+on:
+  schedule:
+    # 每天 03:17 UTC 跑一次（避开整点高峰）
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+# 同一时间只允许一个 bump 任务在跑；新的进来后排队而不是取消旧的
+concurrency:
+  group: bump-claude-code
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    name: Bump formula to upstream release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read current version from formula
+        id: current
+        run: |
+          v=$(awk -F'"' '/^  version "/ { print $2; exit }' Formula/claude-code.rb)
+          if [ -z "$v" ]; then
+            echo "::error::无法从 Formula/claude-code.rb 解析当前 version"
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "current=$v"
+
+      - name: Fetch latest upstream release
+        id: latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # /releases/latest 自身就过滤掉 draft 与 prerelease
+          tag=$(gh api repos/anthropics/claude-code/releases/latest --jq '.tag_name')
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "::error::无法获取 anthropics/claude-code 最新 release"
+            exit 1
+          fi
+          stripped=${tag#v}
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "tag_stripped=$stripped" >> "$GITHUB_OUTPUT"
+          echo "upstream latest: $tag"
+
+      - name: Skip if formula already up to date
+        if: steps.current.outputs.version == steps.latest.outputs.tag_stripped
+        run: |
+          echo "✅ 公式已是 v${{ steps.current.outputs.version }}，与上游最新 v${{ steps.latest.outputs.tag }} 一致，无需更新。"
+          exit 0
+
+      - name: Download upstream SHASUMS256.txt
+        env:
+          TAG: ${{ steps.latest.outputs.tag }}
+        run: |
+          curl -fsSL -o shasums.txt \
+            "https://github.com/anthropics/claude-code/releases/download/${TAG}/SHASUMS256.txt"
+          echo "--- shasums.txt ---"
+          cat shasums.txt
+          echo "--------------------"
+
+      - name: Update formula
+        env:
+          VERSION: ${{ steps.latest.outputs.tag_stripped }}
+        run: ruby scripts/bump_formula.rb Formula/claude-code.rb "$VERSION" shasums.txt
+
+      - name: Ruby syntax check
+        run: ruby -c Formula/claude-code.rb
+
+      - name: "Cross-check: every platform sha matches SHASUMS256.txt"
+        env:
+          VERSION: ${{ steps.latest.outputs.tag_stripped }}
+        run: |
+          ruby -e '
+            shas = File.foreach("shasums.txt").with_object({}) { |l, h| s, n = l.strip.split(/\s+/, 2); h[n] = s if n }
+            %w[darwin-arm64 darwin-x64 linux-arm64 linux-x64].each do |p|
+              filename = "claude-#{p}.tar.gz"
+              content = File.read("Formula/claude-code.rb")
+              m = content.match(/claude-#{Regexp.escape(p)}\.tar\.gz"\s*\n\s*sha256\s+([a-f0-9]+)"/)
+              abort "未在 formula 中找到 #{p} 的 sha256" unless m
+              formula_sha = m[1]
+              upstream_sha = shas[filename]
+              abort "shasums.txt 中缺少 #{filename}" unless upstream_sha
+              if formula_sha != upstream_sha
+                abort "sha256 不一致（#{p}）：formula=#{formula_sha} upstream=#{upstream_sha}"
+              end
+              puts "  #{p}: #{formula_sha} ✓"
+            end
+          '
+
+      - name: Show diff
+        run: git --no-pager diff Formula/claude-code.rb
+
+      - name: Configure git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit
+        run: |
+          git add Formula/claude-code.rb
+          git commit -m "chore(claude-code): bump to v${{ steps.latest.outputs.tag_stripped }}"
+          # 校验确实只有 Formula/claude-code.rb 被改动
+          git diff --cached --stat
+          # 若 commit 失败（无变更），直接退出
+          if ! git diff --cached --quiet; then
+            echo "::error::有未提交的变更"
+            exit 1
+          fi
+
+      - name: Push branch
+        env:
+          VERSION: ${{ steps.latest.outputs.tag_stripped }}
+        run: |
+          BRANCH="bump/claude-code-v${VERSION}"
+          # 删除可能存在的旧同名分支（来自历史失败或被关闭的 PR）
+          git push origin --delete "$BRANCH" 2>/dev/null || true
+          git push origin "HEAD:$BRANCH"
+
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.latest.outputs.tag_stripped }}
+          TAG: ${{ steps.latest.outputs.tag }}
+        run: |
+          BRANCH="bump/claude-code-v${VERSION}"
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(claude-code): bump to v${VERSION}" \
+            --body "$(cat <<EOF
+          上游 [anthropics/claude-code ${TAG}](https://github.com/anthropics/claude-code/releases/tag/${TAG}) 发布后自动同步。
+
+          **变更范围：** 仅 \`Formula/claude-code.rb\`
+          - \`version\`: 已更新至 \`${VERSION}\`
+          - 4 个平台 sha256：已对比 [SHASUMS256.txt](https://github.com/anthropics/claude-code/releases/download/${TAG}/SHASUMS256.txt)
+          - 涵盖平台：darwin-arm64、darwin-x64、linux-arm64、linux-x64
+
+          **验证：**
+          - ✅ Ruby 语法检查通过
+          - ✅ 5 处 sha256（顶部 1 + 各平台 4）均与 SHASUMS256.txt 一致
+
+          触发方式：\`${{ github.event_name }}\`
+          Workflow run：<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}>
+
+          ---
+          🤖 此 PR 由 [bump-claude-code workflow](${{ github.server_url }}/${{ github.repository }}/actions/workflows/bump-claude-code.yml) 自动生成。
+          EOF
+          )"
