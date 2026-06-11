@@ -39,13 +39,41 @@ class ClaudeCode < Formula
     bin.install "claude"
   end
 
+  # 安装完成后在用户 $HOME/.local/bin 下建立软链接，
+  # 便于将该目录放在 PATH 前列时直接调用 claude。
+  def post_install
+    local_bin = File.join(Dir.home, ".local/bin")
+    # 若目标目录不存在则自动创建
+    FileUtils.mkdir_p(local_bin)
+    # 强制覆盖已有链接，指向当前 Cellar 中的二进制
+    ln_sf bin/"claude", "#{local_bin}/claude"
+  end
+
   def caveats
+    local_bin = File.join(Dir.home, ".local/bin")
+    in_path = ENV["PATH"]
+      .split(File::PATH_SEPARATOR)
+      .map { |p| File.expand_path(p) }
+      .include?(local_bin)
+    # 根据 PATH 检测结果给出对应提示
+    path_hint = if in_path
+      "`#{local_bin}` 已在当前 PATH 中，软链接可直接生效。"
+    else
+      "`#{local_bin}` 不在当前 PATH 中，请将其加入 shell 配置，例如：
+
+        export PATH="$HOME/.local/bin:$PATH"
+    end
+
     <<~EOS
       This tap shadows the official homebrew-cask `claude-code` cask (which
       downloads from `downloads.claude.ai` and is unreachable from some
       networks). If you previously installed the cask, uninstall it first:
 
         brew uninstall --cask claude-code
+
+      已在 `#{local_bin}/claude` 创建指向本 formula 二进制的软链接。
+
+      #{path_hint}
     EOS
   end
 
