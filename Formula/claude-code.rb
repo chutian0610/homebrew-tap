@@ -2,8 +2,8 @@ class ClaudeCode < Formula
   desc "Anthropic's official CLI for Claude"
   homepage "https://github.com/anthropics/claude-code"
   url "https://github.com/anthropics/claude-code/releases/download/v#{version}/claude-darwin-arm64.tar.gz"
-  version "2.1.175"
-  sha256 "e57a5445e23a5a0c72d5fa08ff3f21c0991e4f5c2de795cf6e145c687916fde9"
+  version "2.1.177"
+  sha256 "3c56625a875d0d45e85abce60420b97224fc457f79c4b53130f71a298fee81ab"
 
   # claude-code is distributed under Anthropic's proprietary Commercial Terms
   # of Service, which incorporate the Acceptable Use Policy. This dual
@@ -16,22 +16,22 @@ class ClaudeCode < Formula
   on_macos do
     on_arm do
       url "https://github.com/anthropics/claude-code/releases/download/v#{version}/claude-darwin-arm64.tar.gz"
-      sha256 "e57a5445e23a5a0c72d5fa08ff3f21c0991e4f5c2de795cf6e145c687916fde9"
+      sha256 "3c56625a875d0d45e85abce60420b97224fc457f79c4b53130f71a298fee81ab"
     end
     on_intel do
       url "https://github.com/anthropics/claude-code/releases/download/v#{version}/claude-darwin-x64.tar.gz"
-      sha256 "187c59ef304f979b301cf89181eb1348e28e04cd6a1cbdf1b1780572e9c45cf3"
+      sha256 "2181f521c8511af6370454dd6b4d7e1e76d35db4cbf2c51431b3756b1e74f83d"
     end
   end
 
   on_linux do
     on_arm do
       url "https://github.com/anthropics/claude-code/releases/download/v#{version}/claude-linux-arm64.tar.gz"
-      sha256 "b6ba6ca733728e2ca284e715d5ae1baab74410d580da58236787a567009ecf8d"
+      sha256 "b95531bf2f5ae31d6a9203e7df8848c6b9715402f414d7603ba9b1a1109e778e"
     end
     on_intel do
       url "https://github.com/anthropics/claude-code/releases/download/v#{version}/claude-linux-x64.tar.gz"
-      sha256 "873ddee228406a44bdf71868046b2c6a1d133379f89805acd48e1107879eef1b"
+      sha256 "091957f77ee7697589ddcf47391764ca1683cdfdeaa679c08120cf6584b19c51"
     end
   end
 
