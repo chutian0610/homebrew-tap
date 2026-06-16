@@ -171,3 +171,21 @@ jobs:
           🤖 此 PR 由 [bump-claude-code workflow](${{ github.server_url }}/${{ github.repository }}/actions/workflows/bump-claude-code.yml) 自动生成。
           EOF
           )"
+
+      - name: Auto-merge pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.check.outputs.latest_version }}
+        run: |
+          BRANCH="bump/claude-code-v${VERSION}"
+          PR_NUMBER=$(gh pr list --head "$BRANCH" --state open --json number -q '.[0].number // empty')
+          if [ -z "$PR_NUMBER" ]; then
+            echo "::warning::$BRANCH 没有 open PR（可能已被合并或关闭），跳过自动合并"
+            exit 0
+          fi
+          echo "合并 PR #$PR_NUMBER ($BRANCH) ..."
+          gh pr merge "$PR_NUMBER" \
+            --squash \
+            --delete-branch \
+            --subject "chore(claude-code): bump to v${VERSION}" \
+            --body "Auto-merged by bump-claude-code workflow."
